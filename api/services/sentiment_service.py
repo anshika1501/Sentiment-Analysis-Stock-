@@ -4,7 +4,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-HF_API_URL = "https://api-inference.huggingface.co/models/ProsusAI/finbert"
+HF_API_URL = "https://router.huggingface.co/hf-inference/models/ProsusAI/finbert"
 
 def get_sentiment(text):
     """
@@ -48,9 +48,15 @@ def get_sentiment(text):
                 return None
         else:
             logger.error(f"Error from HF API: {response.status_code} - {response.text}")
+            if response.status_code in [401, 403]:
+                # Raise an exception so the outer loop stops trying to process 100 articles
+                raise Exception(f"HF API Auth Error: Please update your Hugging Face Token permissions. The token must have 'Make calls to the Serverless Inference API' enabled.")
             return None
     except Exception as e:
         logger.error(f"Exception calling HF API: {e}")
+        # Re-raise authentication errors so they bubble up to the view
+        if "Auth Error" in str(e):
+            raise
         return None
 
 def normalize_score(label, score):

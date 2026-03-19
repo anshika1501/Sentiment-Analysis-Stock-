@@ -30,57 +30,56 @@ def analyze_stock(request):
         logger.info(f"Fetched {len(articles)} articles for {stock_name}")
         
         saved_count = 0
-        with transaction.atomic():
-            for article in articles:
-                # 2. Store in BronzeData
-                published_at_str = article.get('publishedAt')
-                if not published_at_str:
-                    continue
-                    
-                try:
-                    published_at_str = published_at_str.replace('Z', '+00:00')
-                    published_at = datetime.fromisoformat(published_at_str)
-                except ValueError:
-                    continue
+        for article in articles:
+            # 2. Store in BronzeData
+            published_at_str = article.get('publishedAt')
+            if not published_at_str:
+                continue
+                
+            try:
+                published_at_str = published_at_str.replace('Z', '+00:00')
+                published_at = datetime.fromisoformat(published_at_str)
+            except ValueError:
+                continue
 
-                headline = article.get('title')
-                if not headline or BronzeData.objects.filter(stock_name__iexact=stock_name, headline=headline).exists():
-                    continue
-                    
-                bronze_record = BronzeData.objects.create(
-                    stock_name=stock_name,
-                    headline=headline[:500],
-                    description=article.get('description', ''),
-                    source=article.get('source', {}).get('name', ''),
-                    published_at=published_at
-                )
+            headline = article.get('title')
+            if not headline or BronzeData.objects.filter(stock_name__iexact=stock_name, headline=headline).exists():
+                continue
                 
-                # 3. Clean text
-                text_to_clean = f"{bronze_record.headline} {bronze_record.description or ''}"
-                clean_text = processing_service.clean_text(text_to_clean)
-                
-                # 4. Sentiment Analysis
-                sentiment_result = sentiment_service.get_sentiment(clean_text)
-                
-                raw_label = None
-                raw_score = None
-                normalized = 5.0
-                
-                if sentiment_result:
-                    raw_label = sentiment_result.get('label')
-                    raw_score = sentiment_result.get('score')
-                    normalized = sentiment_service.normalize_score(raw_label, raw_score)
-                
-                # 5. Store in SilverData
-                SilverData.objects.create(
-                    bronze_record=bronze_record,
-                    clean_text=clean_text,
-                    raw_sentiment_label=raw_label,
-                    raw_sentiment_score=raw_score,
-                    normalized_score=normalized
-                )
-                saved_count += 1
-                
+            bronze_record = BronzeData.objects.create(
+                stock_name=stock_name,
+                headline=headline[:500],
+                description=article.get('description', ''),
+                source=article.get('source', {}).get('name', ''),
+                published_at=published_at
+            )
+            
+            # 3. Clean text
+            text_to_clean = f"{bronze_record.headline} {bronze_record.description or ''}"
+            clean_text = processing_service.clean_text(text_to_clean)
+            
+            # 4. Sentiment Analysis
+            sentiment_result = sentiment_service.get_sentiment(clean_text)
+            
+            raw_label = None
+            raw_score = None
+            normalized = 5.0
+            
+            if sentiment_result:
+                raw_label = sentiment_result.get('label')
+                raw_score = sentiment_result.get('score')
+                normalized = sentiment_service.normalize_score(raw_label, raw_score)
+            
+            # 5. Store in SilverData
+            SilverData.objects.create(
+                bronze_record=bronze_record,
+                clean_text=clean_text,
+                raw_sentiment_label=raw_label,
+                raw_sentiment_score=raw_score,
+                normalized_score=normalized
+            )
+            saved_count += 1
+            
         # 6. Aggregate for today
         target_date = date.today()
         gold_record = aggregation_service.aggregate_sentiment(stock_name, target_date)
